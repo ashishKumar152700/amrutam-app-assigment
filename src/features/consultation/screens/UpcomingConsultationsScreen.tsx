@@ -1,0 +1,497 @@
+import React, { useState } from 'react';
+
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+
+import { useBookingStore } from '../store/bookingStore';
+import { Booking } from '../types/booking';
+
+export default function UpcomingConsultationsScreen() {
+  const bookings = useBookingStore(
+    (state) => state.bookings,
+  );
+
+  const cancelBooking = useBookingStore(
+    (state) => state.cancelBooking,
+  );
+
+  const [generatingId, setGeneratingId] =
+    useState<string | null>(null);
+
+  const upcomingBookings = bookings.filter(
+    (booking) =>
+      booking.status === 'confirmed',
+  );
+
+  const handleCancel = (booking: Booking) => {
+    Alert.alert(
+      'Cancel Consultation',
+      `Are you sure you want to cancel your consultation with ${booking.doctor.name}?`,
+      [
+        {
+          text: 'No',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: () => {
+            cancelBooking(booking.id);
+          },
+        },
+      ],
+    );
+  };
+
+  const generateBookingPDF = async (
+    booking: Booking,
+  ) => {
+    try {
+      setGeneratingId(booking.id);
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta
+              name="viewport"
+              content="width=device-width,
+              initial-scale=1.0"
+            />
+
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                padding: 30px;
+                color: #222;
+              }
+
+              .header {
+                text-align: center;
+                margin-bottom: 30px;
+              }
+
+              .brand {
+                font-size: 28px;
+                font-weight: bold;
+                color: #1B5E20;
+              }
+
+              .subtitle {
+                margin-top: 6px;
+                color: #777;
+                font-size: 14px;
+              }
+
+              .card {
+                border: 1px solid #ddd;
+                border-radius: 14px;
+                padding: 20px;
+                margin-bottom: 18px;
+              }
+
+              .heading {
+                color: #1B5E20;
+                font-size: 19px;
+                font-weight: bold;
+                margin-bottom: 14px;
+              }
+
+              .doctor {
+                font-size: 22px;
+                font-weight: bold;
+              }
+
+              .specialization {
+                color: #2E7D32;
+                margin-top: 6px;
+              }
+
+              .row {
+                margin-top: 12px;
+                font-size: 14px;
+                color: #555;
+              }
+
+              .status {
+                margin-top: 15px;
+                padding: 10px;
+                background: #E8F5E9;
+                color: #2E7D32;
+                border-radius: 8px;
+                font-weight: bold;
+              }
+
+              .footer {
+                text-align: center;
+                margin-top: 30px;
+                color: #888;
+                font-size: 12px;
+              }
+            </style>
+          </head>
+
+          <body>
+
+            <div class="header">
+              <div class="brand">
+                Amrutam
+              </div>
+
+              <div class="subtitle">
+                Ayurvedic Consultation Receipt
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="heading">
+                Doctor Details
+              </div>
+
+              <div class="doctor">
+                ${booking.doctor.name}
+              </div>
+
+              <div class="specialization">
+                ${booking.doctor.specialization}
+              </div>
+
+              <div class="row">
+                Location:
+                ${booking.doctor.location}
+              </div>
+
+              <div class="row">
+                Languages:
+                ${booking.doctor.languages.join(', ')}
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="heading">
+                Consultation Details
+              </div>
+
+              <div class="row">
+                Date:
+                ${booking.date}
+              </div>
+
+              <div class="row">
+                Time:
+                ${booking.slot}
+              </div>
+
+              <div class="row">
+                Consultation Fee:
+                ₹${booking.doctor.consultationFee}
+              </div>
+
+              <div class="status">
+                ✓ Consultation Confirmed
+              </div>
+            </div>
+
+            <div class="footer">
+              Generated by Amrutam
+            </div>
+
+          </body>
+        </html>
+      `;
+
+      const { uri } =
+        await Print.printToFileAsync({
+          html,
+        });
+
+      const canShare =
+        await Sharing.isAvailableAsync();
+
+      if (!canShare) {
+        Alert.alert(
+          'PDF Created',
+          'Consultation PDF was generated successfully.',
+        );
+
+        return;
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle:
+          'Share Consultation PDF',
+        UTI: 'com.adobe.pdf',
+      });
+    } catch (error) {
+      console.error(
+        'Consultation PDF error:',
+        error,
+      );
+
+      Alert.alert(
+        'PDF Error',
+        'Unable to generate consultation PDF.',
+      );
+    } finally {
+      setGeneratingId(null);
+    }
+  };
+
+  const renderBooking = ({
+    item,
+  }: {
+    item: Booking;
+  }) => {
+    const generating =
+      generatingId === item.id;
+
+    return (
+      <View style={styles.card}>
+        <Text style={styles.doctorName}>
+          {item.doctor.name}
+        </Text>
+
+        <Text style={styles.specialization}>
+          {item.doctor.specialization}
+        </Text>
+
+        <View style={styles.divider} />
+
+        <Text style={styles.detail}>
+          📅 {item.date}
+        </Text>
+
+        <Text style={styles.detail}>
+          🕐 {item.slot}
+        </Text>
+
+        <Text style={styles.detail}>
+          📍 {item.doctor.location}
+        </Text>
+
+        <Text style={styles.fee}>
+          ₹{item.doctor.consultationFee}
+        </Text>
+
+        {/* PDF */}
+
+        <TouchableOpacity
+          style={[
+            styles.pdfButton,
+            generating &&
+              styles.disabledButton,
+          ]}
+          disabled={generating}
+          onPress={() =>
+            generateBookingPDF(item)
+          }
+          activeOpacity={0.8}
+        >
+          {generating ? (
+            <>
+              <ActivityIndicator
+                size="small"
+                color="#2E7D32"
+              />
+
+              <Text style={styles.pdfText}>
+                Generating PDF...
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.pdfText}>
+              📄 Generate Consultation PDF
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Cancel */}
+
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={() =>
+            handleCancel(item)
+          }
+        >
+          <Text style={styles.cancelText}>
+            Cancel Consultation
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>
+          Upcoming Consultations
+        </Text>
+
+        <Text style={styles.subtitle}>
+          Your scheduled Ayurvedic consultations
+        </Text>
+      </View>
+
+      <FlatList
+        data={upcomingBookings}
+        renderItem={renderBooking}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>
+              📅
+            </Text>
+
+            <Text style={styles.emptyTitle}>
+              No Upcoming Consultations
+            </Text>
+
+            <Text style={styles.emptyText}>
+              Your confirmed bookings will
+              appear here.
+            </Text>
+          </View>
+        }
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F7F9F7',
+  },
+
+  header: {
+    padding: 20,
+  },
+
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1B5E20',
+  },
+
+  subtitle: {
+    marginTop: 5,
+    color: '#666',
+  },
+
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+  },
+
+  card: {
+    backgroundColor: '#FFFFFF',
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 14,
+    elevation: 2,
+  },
+
+  doctorName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#222',
+  },
+
+  specialization: {
+    marginTop: 4,
+    color: '#2E7D32',
+    fontWeight: '600',
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: '#EEEEEE',
+    marginVertical: 14,
+  },
+
+  detail: {
+    marginTop: 8,
+    color: '#555',
+    fontSize: 14,
+  },
+
+  fee: {
+    marginTop: 10,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1B5E20',
+  },
+
+  pdfButton: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: '#2E7D32',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  disabledButton: {
+    opacity: 0.6,
+  },
+
+  pdfText: {
+    color: '#2E7D32',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  cancelButton: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#D32F2F',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+
+  cancelText: {
+    color: '#D32F2F',
+    fontWeight: '700',
+  },
+
+  empty: {
+    alignItems: 'center',
+    padding: 40,
+  },
+
+  emptyIcon: {
+    fontSize: 45,
+  },
+
+  emptyTitle: {
+    marginTop: 12,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+  },
+
+  emptyText: {
+    marginTop: 8,
+    color: '#777',
+    textAlign: 'center',
+  },
+});
